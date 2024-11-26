@@ -8,7 +8,7 @@ public class CamFollow : MonoBehaviour
     private float smoothTime = 0.15f;
     private Vector3 velocity = Vector3.zero;
 
-    [SerializeField] private Transform target;
+    [SerializeField] internal Transform target;
 
     private void Update()
     {

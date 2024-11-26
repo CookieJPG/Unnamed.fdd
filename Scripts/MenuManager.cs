@@ -10,16 +10,14 @@ public class MenuManager : MonoBehaviour
     [Header("Scenes")]
     public string MainMenu = "Menu";
     public string PracticeMode = "Practice Mode";
-    public string FreeForAll = "FreeForAll";
-    public string PlayerVsPlayer = "PlayerVsPlayer";
-    public string WavesMode = "WavesMode";
+    public string FreeForAll = "GroupFight";
+    public string PlayerVsPlayer = "1v1Fight";
     public string CourseMode = "ObstRace";
 
     [Header("Buttons")]
     public Button PracticeButton;
     public Button FreeForAllButton;
     public Button PvPButton;
-    public Button WavesButton;
     public Button RaceButton;
 
     [Header("Cursor")]
@@ -35,7 +33,6 @@ public class MenuManager : MonoBehaviour
         PracticeButton.onClick.AddListener(PlayPractice);
         FreeForAllButton.onClick.AddListener(PlayF4All);
         PvPButton.onClick.AddListener(Play1v1);
-        WavesButton.onClick.AddListener(PlayWaves);
         RaceButton.onClick.AddListener(PlayCourse);
     }
 
@@ -48,30 +45,24 @@ public class MenuManager : MonoBehaviour
     public void PlayPractice()
     {
         PlayerPrefs.SetString("Scene", PracticeMode);
-        SceneManager.LoadScene("CharSelect");
+        SceneManager.LoadScene("SelectObstacle");
     }
 
     public void Play1v1()
     {
         PlayerPrefs.SetString("Scene", PlayerVsPlayer);
-        SceneManager.LoadScene("CharSelect");
+        SceneManager.LoadScene("Select1v1");
     }
 
     public void PlayF4All()
     {   
         PlayerPrefs.SetString("Scene", FreeForAll);
-        SceneManager.LoadScene("CharSelect");
-    }
-
-    public void PlayWaves()
-    {
-        PlayerPrefs.SetString("Scene", WavesMode);
-        SceneManager.LoadScene("CharSelect");
+        SceneManager.LoadScene("SelectChar");
     }
 
     public void PlayCourse()
     {
         PlayerPrefs.SetString("Scene", CourseMode);
-        SceneManager.LoadScene("CharSelect");
+        SceneManager.LoadScene("SelectObstacle");
     }
 }

@@ -9,49 +9,43 @@ public class UpdateStats : MonoBehaviour
     public TMP_Text stats;
     public Slider dashCd;
 
-    private GameObject player;
     private PlayerMovement pm;
     private bool dashStart = false;
+    private string playerIdentity;
+    public GameObject[] lifes;
+    private bool coroutineStarted = false;
 
-    public void Start()
+    public void SetPlayer(PlayerMovement player, string identity)
     {
-        if (PlayerPrefs.GetString("PlayerName") != null)
+        pm = player;
+        this.playerIdentity = identity;
+        if (PlayerPrefs.GetString("PlayerName") != null && PlayerPrefs.GetString($"{playerIdentity}String") == "Player1")
         {
             playerName.text = PlayerPrefs.GetString("PlayerName");
             Debug.Log(PlayerPrefs.GetString("PlayerName"));
         }
     }
 
-    public void SetPlayer(GameObject player)
-    {
-        this.player = player;
-        UpdatePlayerMovement();
-    }
-
-    private void UpdatePlayerMovement()
-    {
-        if (player != null)
-        {
-            pm = player.GetComponent<PlayerMovement>();
-            if (pm == null)
-            {
-                Debug.LogError("PlayerMovement component not found on player.");
-            }
-        }
-        else
-        {
-            Debug.LogError("Player GameObject is not set.");
-        }
-    }
-
     void Update()
     {
-        stats.text = pm.percent.ToString();
+        stats.text = $"{pm.percent}%";
+        if (pm.dead && !coroutineStarted)
+        {
+            StartCoroutine(SetLifes());
+        }
         if (pm.isDashing && !dashStart)
         {
             dashStart = true;
             StartCoroutine(UpdateDashCd(pm.dashingCooldown));
         }
+    }
+
+    IEnumerator SetLifes()
+    {
+        coroutineStarted = true;
+        yield return new WaitForSeconds(0.5f);
+        lifes[pm.lifes].SetActive(false);
+        coroutineStarted = false;
     }
 
     public IEnumerator UpdateDashCd(float cd)
