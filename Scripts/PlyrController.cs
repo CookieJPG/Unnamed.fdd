@@ -1,42 +1,46 @@
 using System.Collections;
-using System.ComponentModel;
+using UnityEditor.SearchService;
 using UnityEngine;
-
+using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 
 public class PlayerMovement : MonoBehaviour
 {
-    [Header("Movement")]
-    [SerializeField] private xAxis horizontalAxis;
-    [SerializeField] private yAxis verticalAxis;
-    [SerializeField] private DashInput dashImput;
-    [SerializeField] private JumpInput jumpInput;
-
-    private float horizontal;
+    internal int lifes;
+    private bool permaDead = false;
+    public int knockback = 8;
+    internal Vector2 moveInput;
     private Vector2 direction;
     private float speed = 8f;
     private float jumpingPower = 16f;
-    private bool isFacingRight = true;
+    public bool isFacingRight = true;
     private bool isWallSliding;
     private float wallSlidingSpeed = 2f;
 
-    private bool canDash = true;
+    private bool dashInput;
+    internal bool canDash;
     public bool isDashing { get; set; } = false;
     private float dashingPower = 16f;
+    private Vector2 dashMovement;
     private float dashingTime = 0.2f;
     public float dashingCooldown { get; } = 1f;
 
-    private bool isWallJumping;
+    private bool jumpInput, stoppedJumping;
+    private bool isWallJumping, canFlip;
     private float wallJumpingDirection;
     private float wallJumpingTime = 0.2f;
     private float wallJumpingCounter;
     private float wallJumpingDuration = 0.1f;
     private Vector2 wallJumpingPower = new Vector2(12f, 16f);
 
-    public int percent { get; set; }
-    private bool dead = false;
+    public int percent;
+    public bool dead = false;
 
-    [SerializeField] private SpriteRenderer sp;
-    [SerializeField] private Rigidbody2D rb;
+    [HideInInspector] public bool attacked { get; set; } = false;
+
+    [SerializeField] internal UserInput UserInput;
+    [SerializeField] internal SpriteRenderer sp;
+    [SerializeField] public Rigidbody2D rb { get; set; }
     [SerializeField] private Transform groundCheck;
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private TrailRenderer tr;
@@ -48,6 +52,8 @@ public class PlayerMovement : MonoBehaviour
     public Animator animator;
 
     private bool dedAnimRunning = false;
+    private bool checkStarted = false;
+    public bool dummy = false;
 
     public void SetRespawn(Transform point)
     {
@@ -56,118 +62,137 @@ public class PlayerMovement : MonoBehaviour
 
     private void Start()
     {
+        canDash = true;
+        canFlip = true;
+        lifes = 3;
         percent = 0;
+        rb = GetComponent<Rigidbody2D>();
         rb.transform.localPosition = new Vector2(respawn.transform.localPosition.x, respawn.transform.localPosition.y);
     }
 
     private void Update()
     {
-        direction = new Vector2(Input.GetAxis(EnToStr.EnumString(horizontalAxis)), Input.GetAxis(EnToStr.EnumString(verticalAxis)));
+        if (dummy) return;
+        if (permaDead) this.gameObject.SetActive(false);
+        if (dead) { rb.velocity = Vector2.zero; return; }
+        if (isDashing || attacked) return;
 
-        if (dead)
-        {
-            animator.SetFloat("MoveSpeed", 0f);
-            rb.velocity = Vector3.zero;
-            return;
-        }
-        if (isDashing)
-        {
-            return;
-        }
+        moveInput = UserInput.moveInput.normalized;
+        jumpInput = UserInput.jumpInput;
+        stoppedJumping = UserInput.jumpReleaseInput;
+        dashInput = UserInput.dashInput;
 
-        horizontal = Input.GetAxisRaw(EnToStr.EnumString(horizontalAxis));
-
-        if (Input.GetButtonDown(EnToStr.EnumString(jumpInput)) && IsGrounded())
+        // Jump logic
+        if (IsGrounded() && jumpInput)
         {
-            animator.SetFloat("MoveSpeed", 0f);
             rb.velocity = new Vector2(rb.velocity.x, jumpingPower);
+            canFlip = false;
         }
-        if (IsGrounded() && !Input.GetButton(EnToStr.EnumString(jumpInput)))
+        if (!IsGrounded() && stoppedJumping && rb.velocity.y > 0)
         {
             rb.velocity = new Vector2(rb.velocity.x, 0f);
         }
-        if (Input.GetButtonUp(EnToStr.EnumString(jumpInput)) && rb.velocity.y > 0f)
+        if (!IsGrounded())
         {
-            rb.velocity = new Vector2(rb.velocity.x, rb.velocity.y * 0.5f);
+            animator.SetFloat("VerticalSpeed", rb.velocity.y);
+        }
+        if (!canFlip && IsGrounded() && !checkStarted)
+        {
+            StartCoroutine(CanFlip());
         }
 
-        if (!isWallJumping)
+        // Dash logic
+        if (dashInput && canDash)
         {
-            if (Input.GetButtonDown(EnToStr.EnumString(dashImput)) && canDash)
-            {
-                StartCoroutine(Dash());
-            }
+            StartCoroutine(Dash());
         }
-
-        animator.SetFloat("VerticalSpeed", rb.velocity.y);
 
         WallSlide();
         WallJump();
 
-        if (!isWallJumping)
+        if (!isWallJumping && !attacked && canFlip)
         {
             Flip();
         }
-        
+
+        // Check for death condition
         if (percent >= 300)
         {
             dead = true;
         }
     }
-
-
     private void FixedUpdate()
     {
-        if (isDashing)
-        {
-            animator.SetFloat("MoveSpeed", 0f);
-            return;
-        }
-
         if (dead)
         {
+            rb.velocity = Vector2.zero;
             if (!dedAnimRunning)
             {
+                GetComponent<CapsuleCollider2D>().enabled = false;
                 au.Play();
                 StartCoroutine(Respawn());
                 dedAnimRunning = true;
             }
         }
 
+        if (attacked)
+        {
+            StartCoroutine(Attacked());
+            return;
+        }
+
+        if (isDashing)
+        {
+            animator.SetFloat("MoveSpeed", 0f);
+            return;
+        }
+
+
         if (!isWallJumping && !dead)
         {
-            rb.velocity = new Vector2(horizontal * speed, rb.velocity.y);
+            rb.velocity = new Vector2(moveInput.x * speed, rb.velocity.y);
             animator.SetFloat("MoveSpeed", Mathf.Pow(rb.velocity.x, 2));
         }
     }
 
+    private IEnumerator Attacked()
+    {
+        yield return new WaitForSeconds(0.01f * knockback);
+        attacked = false;
+    }
+
     private IEnumerator Respawn()
     {
+        lifes--;
         animator.SetBool("IsDead", true);
         yield return new WaitForEndOfFrame();
         animator.Play("Explosion");
         animator.SetBool("IsDead", false);
-        rb.gravityScale = 0f;
         yield return new WaitForSeconds(0.6f);
         percent = 0;
+        knockback = 1;
         sp.enabled = false;
+        float normalGrav = rb.gravityScale;
+        rb.gravityScale = 0;
         yield return new WaitForSeconds(1f);
-        rb.transform.localPosition = new Vector2(respawn.transform.localPosition.x, respawn.transform.localPosition.y);
-        rb.gravityScale = 4f;
+        rb.transform.localPosition = respawn.transform.localPosition;
         yield return new WaitForSeconds(1f);
+        GetComponent<CapsuleCollider2D>().enabled = true;
+        if (lifes <= 0)
+        {
+            permaDead = true;
+            yield break;
+        }
         sp.enabled = true;
-        rb.velocity = Vector2.zero;
         dead = false;
         dedAnimRunning = false;
+        yield return new WaitForEndOfFrame();
+        rb.gravityScale = normalGrav;
     }
 
     private void OnTriggerEnter2D(Collider2D collision)
     {
-        if (collision.CompareTag("Attack"))
-        {
-            percent += 15;
-        }
-        else if (collision.CompareTag("DeathZone"))
+        if (collision.CompareTag("DeathZone"))
         {
             dead = true;
         }
@@ -175,9 +200,26 @@ public class PlayerMovement : MonoBehaviour
         {
             respawn = collision.GetComponent<Transform>();
         }
+        else if (collision.CompareTag("Finish"))
+        {
+            Invoke(nameof(WinChange), 3);
+        }
     }
 
-    private bool IsGrounded()
+    private void WinChange()
+    {
+        SceneManager.LoadScene("WinScreen");
+    }
+
+    private IEnumerator CanFlip()
+    {
+        checkStarted = true;
+        yield return new WaitForSeconds(0.2f);
+        if (IsGrounded() && !canFlip) { canFlip = true; }
+        checkStarted = false;
+    }
+
+    internal bool IsGrounded()
     {
         return Physics2D.OverlapCircle(groundCheck.position, 0.2f, groundLayer);
     }
@@ -189,10 +231,11 @@ public class PlayerMovement : MonoBehaviour
 
     private void WallSlide()
     {
-        if (IsWalled() && !IsGrounded() && horizontal != 0f)
+        if (IsWalled() && !IsGrounded() && moveInput.x != 0f)
         {
             animator.SetFloat("MoveSpeed", 0f);
             isWallSliding = true;
+            canFlip = true;
             rb.velocity = new Vector2(rb.velocity.x, Mathf.Clamp(rb.velocity.y, -wallSlidingSpeed, float.MaxValue));
         }
         else
@@ -216,9 +259,10 @@ public class PlayerMovement : MonoBehaviour
             wallJumpingCounter -= Time.deltaTime;
         }
 
-        if (Input.GetButtonDown(EnToStr.EnumString(jumpInput)) && wallJumpingCounter > 0f)
+        if (jumpInput && wallJumpingCounter > 0f)
         {
             isWallJumping = true;
+            canFlip = true;
             rb.velocity = new Vector2(wallJumpingDirection * wallJumpingPower.x, wallJumpingPower.y);
             animator.SetFloat("VerticalSpeed", rb.velocity.y);
             wallJumpingCounter = 0f;
@@ -240,9 +284,9 @@ public class PlayerMovement : MonoBehaviour
         isWallJumping = false;
     }
 
-    private void Flip()
+    public void Flip()
     {
-        if (isFacingRight && horizontal < 0f || !isFacingRight && horizontal > 0f)
+        if (isFacingRight && moveInput.x < 0f || !isFacingRight && moveInput.x > 0f)
         {
             Vector3 localScale = transform.localScale;
             isFacingRight = !isFacingRight;
@@ -253,12 +297,14 @@ public class PlayerMovement : MonoBehaviour
 
     private IEnumerator Dash()
     {
+        canFlip = true;
         canDash = false;
-        isDashing = true;
         float originalGravity = rb.gravityScale;
+        dashMovement = moveInput * dashingPower;
+        isDashing = true;
         rb.gravityScale = 0f;
-        rb.velocity = direction.normalized * dashingPower;
         rb.angularVelocity = 0f;
+        rb.velocity = dashMovement;
         tr.emitting = true;
         yield return new WaitForSeconds(dashingTime);
         tr.emitting = false;
